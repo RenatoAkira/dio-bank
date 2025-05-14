@@ -1,27 +1,22 @@
-[project]
+[tool.poetry]
 name = "dio-bank"
 version = "0.1.0"
 description = ""
-authors = [
-    {name = "RenatoAkira",email = "renatoakira@hotmail.com"}
-]
+authors = ["RenatoAkira <renatoakira@hotmail.com>"]
 readme = "README.md"
-requires-python = "^3.12"
-dependencies = [
-    "flask",
-    "flask-sqlalchemy",
-    "flask-migrate",
-    "flask-jwt-extended (>=4.6,<5.0)",
-    "pytest",
-    "pytest-mock",
-    "psycopg2-binary",
-    "gunicorn"
-]
+packages = [{ include = "src" }]  # <- Aqui está o jeito correto
 
-[tool.pytest.ini_options]
-addopts = "-vvv"
-testpaths = ["tests"]
+[tool.poetry.dependencies]
+python = "^3.12"
+flask = "*"
+flask-sqlalchemy = "*"
+flask-migrate = "*"
+flask-jwt-extended = "*"
+pytest = "*"
+pytest-mock = "*"
+psycopg2-binary = "*"
+gunicorn = "*"
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
