@@ -1,51 +1,29 @@
 import os
 import click
-import sqlalchemy as sa
 
-from datetime import datetime
 from flask import Flask, current_app
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
+from src.models import db
+from flask_bcrypt import Bcrypt   
+from flask import json
+from werkzeug.exceptions import HTTPException
+from flask_marshmallow import Marshmallow
+from apispec import APISpec
+from apispec.ext.marshmallow import MarshmallowPlugin
+from apispec_webframeworks.flask import FlaskPlugin
 
-
-class Base(DeclarativeBase):
-  pass
-
-db = SQLAlchemy(model_class=Base)
 migrate = Migrate()
 jwt = JWTManager()
-
-class Role(db.Model):
-    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(sa.String, nullable=True)
-    user: Mapped[list["User"]] = relationship(back_populates="role")
-    
-    def __repr__(self) -> str:
-        return f"Role(id={self.id!r}, name={self.name!r})"
-
-class User(db.Model):
-    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(sa.String, unique=True, nullable=False)
-    password: Mapped[str] = mapped_column(sa.String, nullable=False)
-    active: Mapped[bool] = mapped_column(sa.Boolean, default=True)
-    role_id: Mapped[int] = mapped_column(sa.ForeignKey("role.id"))
-    role: Mapped["Role"] = relationship(back_populates="user")
-    
-    def __repr__(self) -> str:
-        return f"User(id={self.id!r}, username={self.username!r}, active={self.active!r})"
-    
-
-class Post(db.Model):
-    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
-    title: Mapped[str] = mapped_column(sa.String, nullable=False)
-    body: Mapped[str] = mapped_column(sa.String, nullable=False)
-    created: Mapped[datetime] = mapped_column(sa.DateTime, server_default=sa.func.now())
-    author_id: Mapped[int] = mapped_column(sa.ForeignKey("user.id"))
-    
-    def __repr__(self) -> str:
-        return f"Post(id={self.id!r}, title={self.title!r}, author_id={self.author_id!r}"
+bcrypt = Bcrypt()
+ma = Marshmallow()
+spec = APISpec(
+    title="DIO Bank",
+    version="1.0.0",
+    openapi_version="3.0.3",
+    info=dict(description="DIO Bank API"),
+    plugins=[FlaskPlugin(), MarshmallowPlugin()],
+)
 
 @click.command('init-db')
 def init_db_command():
@@ -56,22 +34,11 @@ def init_db_command():
     click.echo('Initialized the database.')
 
 
-def create_app(test_config=None):
+def create_app(environment=os.environ["ENVIRONMENT"]):
     # create and configure the app
     app = Flask(__name__, instance_relative_config=True)
-    app.config.from_mapping(
-        SECRET_KEY='dev',
-        SQLALCHEMY_DATABASE_URI=os.environ["DATABASE_URL"],
-        JWT_SECRET_KEY="super-secret",
-    )
-
-    if test_config is None:
-        # load the instance config, if it exists, when not testing
-        app.config.from_pyfile('config.py', silent=True)
-    else:
-        # load the test config if passed in
-        app.config.from_mapping(test_config)
-        
+    app.config.from_object(f"src.config.{environment.title()}Config")
+    
     # ensure the instance folder exists
     try:
         os.makedirs(app.instance_path)
@@ -85,6 +52,8 @@ def create_app(test_config=None):
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
+    bcrypt.init_app(app)
+    ma.init_app(app)
     
     # register blueprints
     from src.controllers import user, auth, role
@@ -92,5 +61,23 @@ def create_app(test_config=None):
     app.register_blueprint(user.app)
     app.register_blueprint(auth.app)
     app.register_blueprint(role.app)
+    
+    @app.route("/docs")
+    def docs():
+        return spec.path(view=user.get_user).to_dict()
+
+    @app.errorhandler(HTTPException)
+    def handle_exception(e):
+        """Return JSON instead of HTML for HTTP errors."""
+        # start with the correct headers and status code from the error
+        response = e.get_response()
+        # replace the body with JSON
+        response.data = json.dumps({
+            "code": e.code,
+            "name": e.name,
+            "description": e.description,
+        })
+        response.content_type = "application/json"
+        return response
     
     return app
